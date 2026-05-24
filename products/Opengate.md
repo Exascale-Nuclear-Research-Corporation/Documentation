@@ -1,7 +1,7 @@
 # ENRCo. CEIA OPENGATE Weapons Detection System
 ## API Documentation
 
-All events are fired through the `DC` BindableEvent located inside the OpenGate model.  
+All events are fired through the `DC` BindableEvent located inside the OpenGate model parent.  
 Place your script inside the OpenGate model and connect to `script.Parent.DC`.
 
 ---
