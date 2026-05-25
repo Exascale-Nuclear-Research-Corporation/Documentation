@@ -1,16 +1,15 @@
 # ENRCo. CEIA OPENGATE Weapons Detection System
 ## API Documentation
 
-All events are fired through the `DC` BindableEvent located inside the OpenGate model parent.  
-Place your script inside the OpenGate model and connect to `script.Parent.DC`.
+All events are fired through the `DC` BindableEvent located inside the OpenGate model.  
+Place your script inside the OpenGate model and connect to `script.Parent.Parent.DC`.
 
 ---
 
 ## Setup
 
 ```lua
-local Gate = script.Parent
-local DC = Gate.DC
+local DC = script.Parent.Parent.DC
 
 DC.Event:Connect(function(Event, ...)
     local Args = {...}
