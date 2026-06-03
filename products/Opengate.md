@@ -1,6 +1,9 @@
 # ENRCo. CEIA OPENGATE Weapons Detection System
 
 ![Preview](https://payhip.com/cdn-cgi/image/format=auto,width=1500/https://pe56d.s3.amazonaws.com/o_1jpds9cu5r2pgr61q6pkm4fb15.png)
+
+![Structure Example](https://r2.lukedevelopment.xyz/Screenshot%202026-06-02%20211556.png)
+
 ## API Documentation
 
 All events are fired through the `DC` BindableEvent located inside the OpenGate model.  
