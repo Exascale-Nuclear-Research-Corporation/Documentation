@@ -26,7 +26,7 @@ The ENRCo. Salto XS Series is a robust card reader system for Roblox that provid
 
 ### `Network`
 
-The primary interface for triggering card reads from other scripts. Located at `script.Network`.
+The primary interface for triggering card reads from other scripts. Located at `script.Parent.SaltoMain.Network`.
 
 > **Note:** This BindableFunction is pre-created in the script. Do not instantiate it yourself.
 
@@ -54,7 +54,7 @@ function Network:Invoke(player: Player, encryptedKey: string?, handle: BasePart?
 
 **Basic card check (no encryption):**
 ```lua
-local Network = script.Parent.Network
+local Network = script.Parent.SaltoMain.Network
 local granted = Network:Invoke(player)
 if granted then
     print("Access granted!")
@@ -65,7 +65,7 @@ end
 
 **With encrypted key:**
 ```lua
-local Network = script.Parent.Network
+local Network = script.Parent.SaltoMain.Network
 local encryptedKey = "4A6F8B2C" -- Example encrypted key
 local handle = tool:FindFirstChild("Handle")
 local granted = Network:Invoke(player, encryptedKey, handle)
@@ -181,47 +181,6 @@ print("Success rate: " .. string.format("%.1f%%", (stats.Granted / total) * 100)
 
 ---
 
-### `player_has_valid_key(player: Player) -> boolean, Tool`
-
-Checks if a player has a valid key in their inventory.
-
-**Parameters:**
-- `player: Player` - The player to check
-
-**Returns:**
-- `boolean` - `true` if the player has a valid key
-- `Tool` - The tool containing the valid key (if found)
-
-**Example:**
-```lua
-local hasKey, tool = player_has_valid_key(player)
-if hasKey then
-    print("Player has a valid key: " .. tool.Name)
-end
-```
-
----
-
-### `get_player_card_tool(player: Player) -> Tool`
-
-Gets the card tool from a player's inventory.
-
-**Parameters:**
-- `player: Player` - The player to check
-
-**Returns:**
-- `Tool` - The card tool if found, `nil` otherwise
-
-**Example:**
-```lua
-local cardTool = get_player_card_tool(player)
-if cardTool then
-    print("Found card: " .. cardTool.Name)
-end
-```
-
----
-
 ## Events
 
 ### ProximityPrompt Events
@@ -270,12 +229,10 @@ When `EnableProximityPrompt = false`:
 ### 1. External Script - Basic Access Check
 ```lua
 -- Place this in any server script
-local readerScript = workspace.Door.Reader.Network
-local Network = readerScript:FindFirstChild("Network")
+local Network = script.Parent.SaltoMain.Network
 
 if Network then
     game.Players.PlayerAdded:Connect(function(player)
-        -- Check access on join
         local hasAccess = Network:Invoke(player)
         if hasAccess then
             print(player.Name .. " has access to this area!")
@@ -286,73 +243,29 @@ end
 
 ### 2. Admin Panel Integration
 ```lua
--- Admin panel script
-local Network = workspace.Door.Reader.Network:FindFirstChild("Network")
+local Network = script.Parent.SaltoMain.Network
 
--- Grant access to specific player
-function grantPlayerAccess(player)
-    -- You would need to add the key to SystemSettings here
-    -- Then trigger a card read
+function checkPlayerAccess(player)
     local result = Network:Invoke(player)
     return result
 end
 
--- Get access logs for display
 function getAccessLogs()
-    local logs = get_access_log()
-    return logs
+    return get_access_log()
 end
 ```
 
 ### 3. Custom Key Validation
 ```lua
--- Extend the reader with custom validation
-local Network = script.Parent.Network
-
--- Store original function
+local Network = script.Parent.SaltoMain.Network
 local originalInvoke = Network.OnInvoke
 
--- Override with custom logic
 Network.OnInvoke = function(player, encryptedKey, handle)
-    -- Custom pre-validation
     if not player:IsInGroup(123456) then
-        warn(player.Name .. " is not in the required group")
         return false
     end
-    
-    -- Call original logic
     return originalInvoke(player, encryptedKey, handle)
 end
-```
-
-### 4. Remote Access Control
-```lua
--- Remote admin script
-local Network = workspace.Door.Reader.Network:FindFirstChild("Network")
-
--- Remote function to check access
-game.ReplicatedStorage:WaitForChild("CheckAccess").OnServerEvent:Connect(function(player, targetPlayer)
-    local result = Network:Invoke(targetPlayer)
-    player:SendNotification("Access for " .. targetPlayer.Name .. ": " .. (result and "Granted" or "Denied"))
-end)
-```
-
-### 5. Access Logger
-```lua
--- Custom logging script
-local Network = workspace.Door.Reader.Network:FindFirstChild("Network")
-
--- Monitor access attempts
-game.Players.PlayerAdded:Connect(function(player)
-    local hasAccess = Network:Invoke(player)
-    
-    -- Log to external service
-    if hasAccess then
-        print("[ACCESS] " .. player.Name .. " granted access")
-    else
-        warn("[ACCESS] " .. player.Name .. " denied access")
-    end
-end)
 ```
 
 ---
@@ -363,14 +276,14 @@ end)
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `Network BindableFunction not found` | The `Network` BindableFunction is missing | Ensure the BindableFunction exists in the script |
+| `Network BindableFunction not found` | The `Network` BindableFunction is missing | Ensure the BindableFunction exists in SaltoMain |
 | `player is nil` | Called Invoke without a player | Always pass a valid Player object |
 | `is_processing` lock | Another card read is in progress | Wait for the current read to complete |
 | `reader_disabled` | Version is outdated | Update to the latest version |
 
 ### Pcall Wrapper Example
 ```lua
-local Network = script.Parent.Network
+local Network = script.Parent.SaltoMain.Network
 
 local success, result = pcall(function()
     return Network:Invoke(player, encryptedKey, handle)
@@ -413,8 +326,7 @@ end)
 
 ### 4. Use Debug Mode During Development
 ```lua
--- Set this in your Configuration
-DebugEnabled = true
+-- Set DebugEnabled = true in Configuration
 ```
 
 ### 5. Monitor Statistics
