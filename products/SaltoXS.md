@@ -6,19 +6,20 @@
 
 ## Overview
 
-The ENRCo. Salto XS Series is a robust card reader system for Roblox that provides secure access control with support for encrypted keys, animations, statistics, and logging. It features a modular architecture with a BindableFunction interface for easy integration with other scripts.
+The ENRCo. Salto XS Series is a card reader system for Roblox providing access control with encrypted keys, animations, statistics, and access logging. Other scripts integrate with it through a single `Network` `BindableFunction` exposed as an action dispatcher — not through direct calls into the reader script.
+
+> **Breaking change from earlier docs:** `Network:Invoke` no longer takes `(player, encryptedKey, handle)` and returns a plain boolean. It now takes an **action name** as its first argument and returns `(ok: boolean, result: any)`. Update any integrations written against the old signature.
 
 ---
 
 ## Table of Contents
 1. [BindableFunction API](#bindablefunction-api)
 2. [RemoteEvent API](#remoteevent-api)
-3. [Public Functions](#public-functions)
-4. [Events](#events)
-5. [Data Structures](#data-structures)
-6. [Examples](#examples)
-7. [Error Handling](#error-handling)
-8. [Best Practices](#best-practices)
+3. [Action Reference](#action-reference)
+4. [Data Structures](#data-structures)
+5. [Examples](#examples)
+6. [Error Handling](#error-handling)
+7. [Best Practices](#best-practices)
 
 ---
 
@@ -26,50 +27,34 @@ The ENRCo. Salto XS Series is a robust card reader system for Roblox that provid
 
 ### `Network`
 
-The primary interface for triggering card reads from other scripts. Located at `script.Parent.SaltoMain.Network`.
+**Location:** `<ReaderModel>.<ScriptName>.Network` — the `BindableFunction` is created as a **child of the reader script itself**, not of the reader model. Substitute your script's actual instance name (e.g. `SaltoMain`).
 
-> **Note:** This BindableFunction is pre-created in the script. Do not instantiate it yourself.
+```lua
+local network = reader_model.SaltoMain.Network
+```
 
 #### Signature
 ```lua
-function Network:Invoke(player: Player, encryptedKey: string?, handle: BasePart?) -> boolean
+function Network:Invoke(action: string, ...: any) -> (ok: boolean, result: any)
 ```
 
 #### Parameters
 
 | Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `player` | `Player` | ✅ Yes | The player attempting access |
-| `encryptedKey` | `string` | ❌ No | Encrypted key data from the card (if using encryption) |
-| `handle` | `BasePart` | ❌ No | The handle part of the card tool (used for size vector decryption) |
+|-----------|------|----------|--------------|
+| `action` | `string` | ✅ Yes | Name of the action to run (see [Action Reference](#action-reference)) |
+| `...` | `any` | Depends | Arguments forwarded to the handler for that action |
 
 #### Returns
-- `boolean` - `true` if access was granted, `false` otherwise
 
-#### Throws
-- Error if `player` is nil
-- Error if `Network` BindableFunction is not found
+| Position | Type | Description |
+|----------|------|--------------|
+| `ok` | `boolean` | `true` if a matching handler ran without erroring, `false` otherwise |
+| `result` | `any` | The handler's **first** return value on success; an error code string on failure (`"UnknownAction"` or `"HandlerError"`) |
 
-#### Usage Examples
+> **Note:** If a handler itself returns multiple values, only the **first** is passed through `Network:Invoke`. See [`HasValidKey`](#hasvalidkey) for a case where this matters.
 
-**Basic card check (no encryption):**
-```lua
-local Network = script.Parent.SaltoMain.Network
-local granted = Network:Invoke(player)
-if granted then
-    print("Access granted!")
-else
-    print("Access denied!")
-end
-```
-
-**With encrypted key:**
-```lua
-local Network = script.Parent.SaltoMain.Network
-local encryptedKey = "4A6F8B2C" -- Example encrypted key
-local handle = tool:FindFirstChild("Handle")
-local granted = Network:Invoke(player, encryptedKey, handle)
-```
+Every call is internally wrapped in `pcall`, so a bad action name or an erroring handler will never throw across the boundary — it just returns `false` plus a reason string.
 
 ---
 
@@ -77,7 +62,7 @@ local granted = Network:Invoke(player, encryptedKey, handle)
 
 ### `__saltotag` RemoteEvent
 
-For backward compatibility with existing card tools. This RemoteEvent is automatically handled by the system.
+For client-side card tools. Handled automatically by the reader; fire-and-forget, no return value.
 
 **Location:** `CardReader.__saltotag`
 
@@ -86,119 +71,92 @@ For backward compatibility with existing card tools. This RemoteEvent is automat
 RemoteEvent:FireServer(encryptedKey: string, handle: BasePart)
 ```
 
-#### Parameters
-
 | Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `encryptedKey` | `string` | ✅ Yes | Encrypted key data from the card |
-| `handle` | `BasePart` | ✅ Yes | The handle part of the card tool |
+|-----------|------|----------|--------------|
+| `encryptedKey` | `string` | ✅ Yes | XOR-encrypted key data from the card |
+| `handle` | `BasePart` | ✅ Yes | The card tool's `Handle`, used as the decryption key source |
 
-#### Example
-
-**Client-side (LocalScript inside tool):**
+#### Example (LocalScript inside the card tool)
 ```lua
-local cardReader = workspace:FindFirstChild("Door").Reader.CardReader
+local cardReader = workspace.Door.Reader.CardReader
 local saltotag = cardReader:FindFirstChild("__saltotag")
 
 if saltotag then
-    local encryptedKey = "4A6F8B2C" -- Your encrypted key
-    local handle = script.Parent:FindFirstChild("Handle")
-    saltotag:FireServer(encryptedKey, handle)
+	local encryptedKey = "4A6F8B2C"
+	local handle = script.Parent:FindFirstChild("Handle")
+	saltotag:FireServer(encryptedKey, handle)
 end
 ```
 
----
-
-## Public Functions
-
-### `debug_print(message: string)`
-
-Prints debug messages to the console if `DebugEnabled` is true in configuration.
-
-**Parameters:**
-- `message: string` - The debug message to print
-
-**Example:**
-```lua
-debug_print("Processing card read for " .. player.Name)
--- Output: [ENRCo. Salto]: Processing card read for Player123
-```
+This triggers the same internal `perform_card_read` flow as a physical swipe/tap: LED flash, sound, grant/deny, logging, and statistics — there's no separate result to read back from this event; watch the LED or subscribe to the access log via `Network` instead.
 
 ---
 
-### `get_access_log() -> table`
+## Action Reference
 
-Returns the access log containing all access attempts stored in memory.
+### `GetStatistics`
+Returns cumulative grant/deny counts.
 
-**Returns:** Table of log entries (max `MaxLogEntries`)
-
-**Structure:**
 ```lua
-{
-    {
-        PlayerName = "Player123",
-        UserId = 123456789,
-        Result = "Granted", -- or "Denied"
-        Timestamp = 1234567890
-    },
-    -- More entries...
-}
+local ok, stats = network:Invoke("GetStatistics")
+-- stats = { Granted = 42, Denied = 7 }
 ```
 
-**Example:**
+### `GetAccessLog`
+Returns up to `CONFIG.MaxLogEntries` recent access attempts, oldest first.
+
 ```lua
-local logs = get_access_log()
+local ok, logs = network:Invoke("GetAccessLog")
 for _, entry in ipairs(logs) do
-    print(string.format("%s was %s at %s", 
-        entry.PlayerName, 
-        entry.Result, 
-        os.date("%Y-%m-%d %H:%M:%S", entry.Timestamp)
-    ))
+	print(entry.PlayerName, entry.Result, os.date("%c", entry.Timestamp))
 end
 ```
 
----
+Returns `{}` if `CONFIG.EnableAccessLogging` is off or no attempts have been logged yet.
 
-### `get_statistics() -> table`
+### `GetVersion`
+Returns the reader's version string.
 
-Returns usage statistics for the reader.
-
-**Returns:**
 ```lua
-{
-    Granted = 42,  -- Number of granted accesses
-    Denied = 7     -- Number of denied accesses
-}
+local ok, version = network:Invoke("GetVersion") -- "1.2.0"
 ```
 
-**Example:**
+### `IsProcessing`
+Returns whether the reader is currently mid-read (LED animating, door timer running, etc.). Useful for gating UI so you don't fire a redundant swipe.
+
 ```lua
-local stats = get_statistics()
-local total = stats.Granted + stats.Denied
-print("Total attempts: " .. total)
-print("Success rate: " .. string.format("%.1f%%", (stats.Granted / total) * 100))
+local ok, busy = network:Invoke("IsProcessing")
 ```
 
----
+### `IsDisabled`
+Returns whether the reader has auto-disabled itself due to a major-version mismatch against the remote version manifest.
 
-## Events
+```lua
+local ok, disabled = network:Invoke("IsDisabled")
+```
 
-### ProximityPrompt Events
+### `GetAllowedKeys`
+Returns a **copy** of the currently loaded allowed-key list (safe to mutate; won't affect the live reader).
 
-When `EnableProximityPrompt = true`:
+```lua
+local ok, keys = network:Invoke("GetAllowedKeys")
+```
 
-| Event | Description |
-|-------|-------------|
-| `PromptButtonHoldBegan` | Fired when player starts holding the prompt |
-| `PromptButtonHoldEnded` | Fired when player releases the prompt (cancels swipe) |
+### `ReloadDoorConfiguration`
+Re-reads `SystemSettings` from the door model and repopulates the allowed-key list. Returns `true` on success, `false` if `SystemSettings` is missing or malformed.
 
-### Touch Events
+```lua
+local ok, reloaded = network:Invoke("ReloadDoorConfiguration")
+```
 
-When `EnableProximityPrompt = false`:
+### `HasValidKey`
+Checks whether a player is currently carrying a valid key, without triggering a read (no LED, no sound, no logging).
 
-| Event | Description |
-|-------|-------------|
-| `Touched` | Fired when something touches the CardReader part |
+```lua
+local ok, hasKey = network:Invoke("HasValidKey", somePlayer)
+```
+
+> **Truncation caveat:** internally this handler returns `(hasKey, toolInstance)`, but `Network:Invoke` only forwards the first value — you get `hasKey` back, not the matching `Tool`. If you need the tool instance too, call the reader's `get_player_card_tool`-equivalent logic yourself, or ask for a dedicated action to be added.
 
 ---
 
@@ -207,18 +165,18 @@ When `EnableProximityPrompt = false`:
 ### Access Log Entry
 ```lua
 {
-    PlayerName = "Player123",   -- Player's display name
-    UserId = 123456789,         -- Player's UserId
-    Result = "Granted",         -- "Granted" or "Denied"
-    Timestamp = 1234567890      -- Unix timestamp
+	PlayerName = "Player123",
+	UserId = 123456789,
+	Result = "Granted", -- or "Denied"
+	Timestamp = 1234567890, -- os.time()
 }
 ```
 
-### Statistics Entry
+### Statistics
 ```lua
 {
-    Granted = 42,  -- Total grants
-    Denied = 7     -- Total denials
+	Granted = 42,
+	Denied = 7,
 }
 ```
 
@@ -226,45 +184,47 @@ When `EnableProximityPrompt = false`:
 
 ## Examples
 
-### 1. External Script - Basic Access Check
+### 1. External Script — Log Denial Spikes
 ```lua
--- Place this in any server script
-local Network = script.Parent.SaltoMain.Network
+local network = workspace.Door.Reader.SaltoMain.Network
 
-if Network then
-    game.Players.PlayerAdded:Connect(function(player)
-        local hasAccess = Network:Invoke(player)
-        if hasAccess then
-            print(player.Name .. " has access to this area!")
-        end
-    end)
-end
+task.spawn(function()
+	while true do
+		task.wait(60)
+		local ok, stats = network:Invoke("GetStatistics")
+		if ok and stats.Denied > 10 then
+			warn("High denial rate detected on this reader!")
+		end
+	end
+end)
 ```
 
 ### 2. Admin Panel Integration
 ```lua
-local Network = script.Parent.SaltoMain.Network
+local network = script.Parent.SaltoMain.Network
 
-function checkPlayerAccess(player)
-    local result = Network:Invoke(player)
-    return result
+local function checkPlayerAccess(player)
+	local ok, hasKey = network:Invoke("HasValidKey", player)
+	return ok and hasKey
 end
 
-function getAccessLogs()
-    return get_access_log()
+local function getAccessLogs()
+	local ok, logs = network:Invoke("GetAccessLog")
+	return ok and logs or {}
 end
 ```
 
-### 3. Custom Key Validation
+### 3. Hot-Reload Keys After an Admin Edits SystemSettings
 ```lua
-local Network = script.Parent.SaltoMain.Network
-local originalInvoke = Network.OnInvoke
+local network = script.Parent.SaltoMain.Network
 
-Network.OnInvoke = function(player, encryptedKey, handle)
-    if not player:IsInGroup(123456) then
-        return false
-    end
-    return originalInvoke(player, encryptedKey, handle)
+local function pushKeyUpdate()
+	local ok, reloaded = network:Invoke("ReloadDoorConfiguration")
+	if ok and reloaded then
+		print("Reader picked up new key list")
+	else
+		warn("Reload failed — check SystemSettings on the door")
+	end
 end
 ```
 
@@ -272,67 +232,36 @@ end
 
 ## Error Handling
 
-### Common Errors
+### Common Failure Cases
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `Network BindableFunction not found` | The `Network` BindableFunction is missing | Ensure the BindableFunction exists in SaltoMain |
-| `player is nil` | Called Invoke without a player | Always pass a valid Player object |
-| `is_processing` lock | Another card read is in progress | Wait for the current read to complete |
-| `reader_disabled` | Version is outdated | Update to the latest version |
+| `ok` | `result` | Cause | Fix |
+|------|----------|-------|-----|
+| `false` | `"UnknownAction"` | Action name typo or unsupported action | Check spelling against the [Action Reference](#action-reference) |
+| `false` | `"HandlerError"` | The handler itself errored (bad argument type, etc.) | Check server output for the warned error message; verify argument types |
+| `true` | `nil`/`false` | Handler ran but the semantic answer was negative (e.g. `HasValidKey` → `false`) | This is a normal result, not a failure — check `result`, not just `ok` |
 
-### Pcall Wrapper Example
+### Safe Invoke Wrapper
 ```lua
-local Network = script.Parent.SaltoMain.Network
-
-local success, result = pcall(function()
-    return Network:Invoke(player, encryptedKey, handle)
-end)
-
-if not success then
-    warn("Card read failed: " .. result)
-    return false
+local function safeInvoke(network, action, ...)
+	local ok, result = pcall(function()
+		return network:Invoke(action, ...)
+	end)
+	if not ok then
+		warn("Network dispatch threw: " .. tostring(result))
+		return false, "DispatchError"
+	end
+	return result -- (handlerOk, handlerResult) from the reader
 end
-
-return result
 ```
+
+Note: `Network.OnInvoke` already pcalls the handler internally, so this outer wrapper is only defending against the (rare) case of the `BindableFunction` itself being missing or destroyed mid-call.
 
 ---
 
 ## Best Practices
 
-### 1. Always Pcall Your Invokes
-```lua
-local success, result = pcall(function()
-    return Network:Invoke(player)
-end)
-```
-
-### 2. Check for Nil Values
-```lua
-if not Network then
-    warn("Network BindableFunction not found")
-    return
-end
-```
-
-### 3. Handle Asynchronous Calls Properly
-```lua
-task.spawn(function()
-    local result = Network:Invoke(player)
-    -- Handle result here
-end)
-```
-
-### 4. Use Debug Mode During Development
-```lua
--- Set DebugEnabled = true in Configuration
-```
-
-### 5. Monitor Statistics
-```lua
-local stats = get_statistics()
-if stats.Denied > 10 then
-    warn("High denial rate detected!")
-end
-```
+1. **Always check `ok` before trusting `result`.** A `false` result value and a `false` `ok` mean different things.
+2. **Cache the `Network` reference**, don't re-index `script.Parent...Network` on every call.
+3. **Don't poll `IsProcessing` in a tight loop** — check it once before you'd otherwise fire a duplicate swipe, not continuously.
+4. **Use `GetAccessLog`/`GetStatistics` for monitoring, not access decisions** — they reflect history, not real-time authorization state.
+5. **After calling `ReloadDoorConfiguration`, re-fetch `GetAllowedKeys`** if you're displaying the key list somewhere, since the old copy is now stale.
