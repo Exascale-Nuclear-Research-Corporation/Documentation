@@ -1,6 +1,6 @@
 # ENRCo. HID Proximity & multiClass with Signo - API Documentation
 
-## Version: 3.0.1
+## Version: 3.0.2
 
 ---
 
